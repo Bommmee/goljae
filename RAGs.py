@@ -8,79 +8,38 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
+
 async def setup_rag_chain():
+    """Hugging Face에서 인덱스를 로드하여 RAG 체인 설정"""
     try:
-        # Hugging Face에서 파일 다운로드
+        # Hugging Face에서 파일 다운로드 - 임시 디렉토리 사용
         index_path = hf_hub_download(
             repo_id="Bommmmee/faiss-index",
             filename="index.faiss",
             repo_type="dataset",
-            local_dir="./temp_index"  # 임시 디렉토리 지정
-        )
-        
-        pkl_path = hf_hub_download(
-            repo_id="Bommmmee/faiss-index",
-            filename="index.pkl",
-            repo_type="dataset",
-            local_dir="./temp_index"  # 임시 디렉토리 지정
+            local_dir="/tmp"  # 임시 디렉토리 사용
         )
         
         # OpenAI 임베딩 초기화
         embeddings = OpenAIEmbeddings()
         
-        # FAISS 인덱스 로드
-        index_dir = os.path.dirname(index_path)
-        print(f"Loading from directory: {index_dir}")  # 디버깅용 출력
-        
+        # FAISS 인덱스 로드 - 메모리 최적화 설정
         vectorstore = FAISS.load_local(
-            folder_path=index_dir,
+            folder_path=os.path.dirname(index_path),
             embeddings=embeddings,
             allow_dangerous_deserialization=True
         )
         
-        # LLM 설정
-        llm = ChatOpenAI(temperature=0)
-        
-        # 메모리 설정
-        memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            output_key="answer",
-            return_messages=True
-        )
-
-        # 프롬프트 템플릿
-        template = """
-        당신은 문서 내용을 이해하고 질문에 답변하는 전문가입니다.
-
-        규칙:
-        1. 문서에서 찾을 수 있는 정보만 사용하여 답변하세요.
-        2. 찾을 수 없는 경우 "죄송합니다. 다시 구체적으로 입력해 주세요"라고 답변하세요.
-        3. 추측하지 마세요.
-
-        문서:
-        {context}
-
-        질문: {question}
-
-        답변:"""
-
-        QA_CHAIN_PROMPT = PromptTemplate(
-            input_variables=["context", "question"],
-            template=template
-        )
-
-        # QA 체인 설정
+        # QA 체인 설정 - 메모리 최적화
         qa_chain = ConversationalRetrievalChain.from_llm(
-            llm=llm,
+            llm=ChatOpenAI(temperature=0),
             retriever=vectorstore.as_retriever(
-                search_kwargs={"k": 3}
+                search_kwargs={"k": 2}  # k 값을 줄여서 메모리 사용량 감소
             ),
-            memory=memory,
-            combine_docs_chain_kwargs={"prompt": QA_CHAIN_PROMPT},
             return_source_documents=False,
-            verbose=True
+            verbose=False
         )
-
+        
         return qa_chain
         
     except Exception as e:
